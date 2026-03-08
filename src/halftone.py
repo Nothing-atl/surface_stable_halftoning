@@ -1,16 +1,37 @@
 import numpy as np
+import cv2
 
-BAYER_4 = (1/16.0) * np.array([
-    [0, 8, 2,10],
-    [12,4,14,6],
-    [3,11,1,9],
-    [15,7,13,5]
-])
+CELL_SIZE = 4
 
-def ordered_dither(gray):
+def build_dot_grid(gray: np.ndarray) -> list[dict]:
+    h, w = gray.shape
     img = gray.astype(np.float32) / 255.0
-    h, w = img.shape
-    tiled = np.tile(BAYER_4, (h//4 + 1, w//4 + 1))# Repeat the Bayer matrix so it covers the whole image.The matrix repeats every 4x4 pixels
-    tiled = tiled[:h, :w] # Crop the tiled matrix so it matches the exact image size
-    out = (img > tiled) * 255.  # Compare each pixel intensity with the threshold matrix.If pixel > threshold → white (255). If pixel ≤ threshold → black (0)
-    return out.astype(np.uint8)
+    dots = []
+
+    for y in range(0, h, CELL_SIZE):
+        for x in range(0, w, CELL_SIZE):
+            cell = img[y:y+CELL_SIZE, x:x+CELL_SIZE]
+            intensity = cell.mean()
+            max_radius = CELL_SIZE // 2
+            radius = max_radius * (1.0 - intensity)
+
+            cx = x + CELL_SIZE // 2
+            cy = y + CELL_SIZE // 2
+
+            dots.append({
+                "cx": cx,
+                "cy": cy,
+                "radius": radius,
+                "intensity": intensity,
+            })
+
+    return dots
+
+
+def render_dots(dots: list[dict], h: int, w: int) -> np.ndarray:
+    canvas = np.ones((h, w), dtype=np.uint8) * 255
+    for dot in dots:
+        r = int(round(dot["radius"]))
+        if r > 0:
+            cv2.circle(canvas, (int(dot["cx"]), int(dot["cy"])), r, 0, -1)
+    return canvas
