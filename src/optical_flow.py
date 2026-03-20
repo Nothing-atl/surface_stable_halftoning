@@ -1,8 +1,50 @@
 import cv2
+import numpy as np
 
-# Compute dense optical flow between two frames using Farneback's method.
-# Returns motion vectors (dx,dy) for each pixel indicating how the image. moved from the previous frame to the current frame.
-# the format is: cv2.calcOpticalFlowFarneback( prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags )
-def compute_flow(prev, curr):
-    flow = cv2.calcOpticalFlowFarneback(prev, curr,None, 0.5,3,15,3, 5,1.2, 0)
+DEFAULT_FLOW_PARAMS = {
+    "pyr_scale": 0.5,
+    "levels": 3,
+    "winsize": 21,
+    "iterations": 3,
+    "poly_n": 5,
+    "poly_sigma": 1.2,
+    "flags": 0,
+}
+
+
+def compute_flow(prev_gray, curr_gray, params=None):
+    """
+    Dense Farneback optical flow.
+    prev_gray and curr_gray must both be single-channel uint8 images.
+    """
+    p = DEFAULT_FLOW_PARAMS.copy()
+    if params is not None:
+        p.update(params)
+
+    flow = cv2.calcOpticalFlowFarneback(
+        prev_gray,
+        curr_gray,
+        None,
+        p["pyr_scale"],
+        p["levels"],
+        p["winsize"],
+        p["iterations"],
+        p["poly_n"],
+        p["poly_sigma"],
+        p["flags"],
+    )
     return flow
+
+
+def sample_flow(flow, xs, ys):
+    """
+    Sample flow vectors at float point coordinates using nearest-neighbor lookup.
+    Returns dx, dy arrays with the same shape as xs and ys.
+    """
+    h, w = flow.shape[:2]
+    ix = np.clip(np.rint(xs).astype(np.int32), 0, w - 1)
+    iy = np.clip(np.rint(ys).astype(np.int32), 0, h - 1)
+
+    dx = flow[iy, ix, 0]
+    dy = flow[iy, ix, 1]
+    return dx, dy

@@ -1,106 +1,197 @@
-import cv2
 import os
+import cv2
+import numpy as np
+
 from video_utils import read_video, write_video
-from halftone import ordered_dither
+from stabilized_halftone import render_baseline_sequence, render_stabilized_sequence
 
-INPUT_VIDEO = "data/videos"
-OUTPUT_VIDEO = "outputs/videos"
-OUTPUT_FRAME = "outputs/frames"
+INPUT_VIDEO_DIR = "data/videos"
 
-INPUT_IMAGE = "data/images"
-OUTPUT_IMAGE = "outputs/images"
+OUTPUT_VIDEO_DIR = "outputs/videos"
+OUTPUT_FRAME_DIR = "outputs/frames"
+OUTPUT_DIAGNOSTIC_DIR = "outputs/diagnostics"
 
-IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
 VID_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".wmv"}
 
-def process_video(input_dir, output_dir):
-    filenames = [
-        f for f in os.listdir(input_dir)
-        if os.path.splitext(f)[1].lower() in VID_EXTENSIONS
-    ]
-    if not filenames:
-        print(f"No supported videos found in '{input_dir}'.")
+GRID_SIZE = 8
+BLUR_KSIZE = 5
+MAX_RADIUS_RATIO = 0.45
+
+RADIUS_ALPHA = 0.6
+DRIFT_LIMIT_CELLS = 2.0
+SNAP_STRENGTH = 0.10
+BLEND_ALPHA = 0.7
+
+FLOW_PARAMS = {
+    "pyr_scale": 0.5,
+    "levels": 3,
+    "winsize": 21,
+    "iterations": 3,
+    "poly_n": 5,
+    "poly_sigma": 1.2,
+    "flags": 0,
+}
+
+MAX_FRAMES = 60  # Set to None for full videos
+
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+
+def save_frame_sequence(frames, output_dir):
+    ensure_dir(output_dir)
+    for i, frame in enumerate(frames):
+        path = os.path.join(output_dir, f"frame_{i + 1:04d}.png")
+        cv2.imwrite(path, frame)
+
+
+def save_sampled_frame_sequence(frames, output_dir, step=10):
+    """
+    Save every `step`-th frame using 1-based human-readable numbering.
+
+    Example:
+    if frames has 60 items and step=10, this saves:
+    frame_0001.png
+    frame_0011.png
+    frame_0021.png
+    frame_0031.png
+    frame_0041.png
+    frame_0051.png
+    """
+    ensure_dir(output_dir)
+
+    for i, frame in enumerate(frames):
+        if i % step == 0:
+            path = os.path.join(output_dir, f"frame_{i + 1:04d}.png")
+            cv2.imwrite(path, frame)
+
+
+def amplified_instability(rendered_frames, gray_frames, alpha=6.0):
+    """
+    Compare the temporal difference in the rendered result against the temporal
+    difference in the source grayscale frames.
+
+    instability = | |R_t - R_{t+1}| - |G_t - G_{t+1}| |
+    """
+    if len(rendered_frames) < 2 or len(gray_frames) < 2:
+        return None, None, None
+
+    rendered_diff = cv2.absdiff(rendered_frames[0], rendered_frames[1])
+    gray_diff = cv2.absdiff(gray_frames[0], gray_frames[1])
+
+    if gray_diff.shape != rendered_diff.shape:
+        gray_diff = cv2.resize(gray_diff, (rendered_diff.shape[1], rendered_diff.shape[0]))
+
+    instability = cv2.absdiff(rendered_diff, gray_diff)
+    instability_amp = cv2.convertScaleAbs(instability, alpha=alpha)
+
+    return rendered_diff, gray_diff, instability_amp
+
+
+def save_diagnostics(video_stem, baseline_frames, stabilized_frames, gray_frames):
+    diag_dir = os.path.join(OUTPUT_DIAGNOSTIC_DIR, video_stem)
+    ensure_dir(diag_dir)
+
+    b_diff, gray_diff, b_instability = amplified_instability(baseline_frames, gray_frames)
+    s_diff, _, s_instability = amplified_instability(stabilized_frames, gray_frames)
+
+    if b_diff is None:
         return
-    
-    for filename in filenames:
-        input_path = os.path.join(input_dir, filename)
-        output_path = os.path.join(output_dir, filename)
 
-        frames = read_video(input_path)
-        output_frames = []
-        for frame in frames:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            dither = ordered_dither(gray)
-            output_frames.append(dither)
-        write_video(output_frames, output_path)
-        print(f"Baseline halftone video saved: {output_path}")
+    cv2.imwrite(os.path.join(diag_dir, "ground_truth_diff.png"), gray_diff)
+    cv2.imwrite(os.path.join(diag_dir, "baseline_diff.png"), b_diff)
+    cv2.imwrite(os.path.join(diag_dir, "baseline_instability.png"), b_instability)
+    cv2.imwrite(os.path.join(diag_dir, "stabilized_diff.png"), s_diff)
+    cv2.imwrite(os.path.join(diag_dir, "stabilized_instability.png"), s_instability)
 
-def process_frames(input_dir, output_dir, n=20):
-    filenames = [
-        f for f in os.listdir(input_dir)
-        if os.path.splitext(f)[1].lower() in VID_EXTENSIONS
-    ]
-    if not filenames:
-        print(f"No supported videos found in '{input_dir}'.")
-        return
+    baseline_mean = float(np.mean(b_instability))
+    stabilized_mean = float(np.mean(s_instability))
+    improvement = baseline_mean - stabilized_mean
 
-    for filename in filenames:
-        input_path = os.path.join(input_dir, filename)
-        stem = os.path.splitext(filename)[0]
-        output_folder = os.path.join(output_dir, stem)
-        os.makedirs(output_folder, exist_ok=True)
+    with open(os.path.join(diag_dir, "metrics.txt"), "w", encoding="utf-8") as f:
+        f.write(f"Baseline mean instability: {baseline_mean:.4f}\n")
+        f.write(f"Stabilized mean instability: {stabilized_mean:.4f}\n")
+        f.write(f"Mean instability reduction: {improvement:.4f}\n")
 
-        frames = read_video(input_path, max_frames=n)
-        for i, frame in enumerate(frames):
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            dither = ordered_dither(gray)
-            output_frame = os.path.join(output_folder, f"frame_{i:04d}.png")
-            cv2.imwrite(output_frame, dither)
 
-        print(f"Saved {n} halftone frames to: {output_folder}")
+def process_video_file(input_path):
+    filename = os.path.basename(input_path)
+    stem, _ = os.path.splitext(filename)
 
-def process_image(input_dir, output_dir):
-    filenames = [
-        f for f in os.listdir(input_dir)
-        if os.path.splitext(f)[1].lower() in IMG_EXTENSIONS
-    ]
-    if not filenames:
-        print(f"No supported images found in '{input_dir}'.")
-        return
-    
-    for filename in filenames:
-        input_path = os.path.join(input_dir, filename)
-        output_path = os.path.join(output_dir, filename)
+    frames, fps = read_video(input_path, max_frames=MAX_FRAMES)
 
-        img = cv2.imread(input_path)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        dither = ordered_dither(gray)
-        cv2.imwrite(output_path, dither)
-        print(f"Baseline halftone image saved: {output_path}")
+    baseline_frames, gray_frames = render_baseline_sequence(
+        frames,
+        grid_size=GRID_SIZE,
+        blur_ksize=BLUR_KSIZE,
+        max_radius_ratio=MAX_RADIUS_RATIO,
+    )
 
-def process_diff():
-    img1 = cv2.imread(r"outputs\frames\clouds\frame_0000.png", cv2.IMREAD_GRAYSCALE)
-    img2 = cv2.imread(r"outputs\frames\clouds\frame_0001.png", cv2.IMREAD_GRAYSCALE)
-    orig1 = cv2.imread(r"data\videos\grayscale\frame_0000.png", cv2.IMREAD_GRAYSCALE)
-    orig2 = cv2.imread(r"data\videos\grayscale\frame_0001.png", cv2.IMREAD_GRAYSCALE)
-    orig1 = cv2.resize(orig1, (img1.shape[1], img1.shape[0]))
-    orig2 = cv2.resize(orig2, (img2.shape[1], img2.shape[0]))
+    stabilized_frames, _ = render_stabilized_sequence(
+    frames,
+    grid_size=GRID_SIZE,
+    blur_ksize=BLUR_KSIZE,
+    max_radius_ratio=MAX_RADIUS_RATIO,
+    radius_alpha=RADIUS_ALPHA,
+    drift_limit_cells=DRIFT_LIMIT_CELLS,
+    snap_strength=SNAP_STRENGTH,
+    flow_params=FLOW_PARAMS,
+    blend_alpha=BLEND_ALPHA,
+    )
 
-    dither_diff = cv2.absdiff(img1, img2)
-    ground_truth_diff = cv2.absdiff(orig1, orig2)
+    baseline_video_path = os.path.join(OUTPUT_VIDEO_DIR, "baseline", f"{stem}.mp4")
+    stabilized_video_path = os.path.join(OUTPUT_VIDEO_DIR, "stabilized", f"{stem}.mp4")
 
-    instability = cv2.absdiff(dither_diff, ground_truth_diff)
-    instability_amplified = cv2.convertScaleAbs(instability, alpha=10)
+    write_video(baseline_frames, baseline_video_path, fps=fps)
+    write_video(stabilized_frames, stabilized_video_path, fps=fps)
 
-    cv2.imwrite(r"outputs\frames\clouds\test1.png", dither_diff)
-    cv2.imwrite(r"outputs\frames\clouds\test2.png", ground_truth_diff)
-    cv2.imwrite(r"outputs\frames\clouds\diff.png", instability_amplified)
+    # # Save all generated frames
+    # save_frame_sequence(
+    #     baseline_frames,
+    #     os.path.join(OUTPUT_FRAME_DIR, "baseline", stem, "all_frames")
+    # )
+    # save_frame_sequence(
+    #     stabilized_frames,
+    #     os.path.join(OUTPUT_FRAME_DIR, "stabilized", stem, "all_frames")
+    # )
+
+    # Save report-friendly sampled frames every 10 frames
+    save_sampled_frame_sequence(
+        baseline_frames,
+        os.path.join(OUTPUT_FRAME_DIR, "baseline", stem, "report_frames"),
+        step=10
+    )
+    save_sampled_frame_sequence(
+        stabilized_frames,
+        os.path.join(OUTPUT_FRAME_DIR, "stabilized", stem, "report_frames"),
+        step=10
+    )
+
+    save_diagnostics(stem, baseline_frames, stabilized_frames, gray_frames)
+
+    print(f"Finished processing: {filename}")
+    print(f"  Baseline video:   {baseline_video_path}")
+    print(f"  Stabilized video: {stabilized_video_path}")
+
 
 def main():
-    # process_video(INPUT_VIDEO, OUTPUT_VIDEO)
-    process_frames(INPUT_VIDEO, OUTPUT_FRAME)
-    process_diff()
-    # process_image(INPUT_IMAGE, OUTPUT_IMAGE)
+    ensure_dir(OUTPUT_VIDEO_DIR)
+    ensure_dir(OUTPUT_FRAME_DIR)
+    ensure_dir(OUTPUT_DIAGNOSTIC_DIR)
+
+    filenames = [
+        f for f in os.listdir(INPUT_VIDEO_DIR)
+        if os.path.splitext(f)[1].lower() in VID_EXTENSIONS
+    ]
+
+    if not filenames:
+        print(f"No supported videos found in '{INPUT_VIDEO_DIR}'.")
+        return
+
+    for filename in filenames:
+        process_video_file(os.path.join(INPUT_VIDEO_DIR, filename))
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,3 @@
+Baseline mean instability: 37.4505
+Stabilized mean instability: 82.0686
+Mean instability reduction: -44.6181
