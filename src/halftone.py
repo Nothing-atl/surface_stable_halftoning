@@ -1,8 +1,8 @@
 import numpy as np
 import cv2
 
-CELL_SIZE = 16 # Expands each pixel by CELL_SIZExCELL_SIZE to fit circle
-DOWNSAMPLE = 16
+CELL_SIZE = 8 # Expands each pixel by CELL_SIZExCELL_SIZE to fit circle
+DOWNSAMPLE = 4
 
 BAYER_4 = (1/16.0) * np.array([
     [0,8,2,10],
