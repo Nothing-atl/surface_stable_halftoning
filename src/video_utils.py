@@ -1,6 +1,6 @@
 import cv2
 
-def read_video(path):
+def read_video(path, max_frames=None):
     cap = cv2.VideoCapture(path)
     frames = []
 
@@ -9,6 +9,8 @@ def read_video(path):
         if not ret:
             break
         frames.append(frame)
+        if max_frames is not None and len(frames) >= max_frames:
+            break
     cap.release()
     return frames
 
