@@ -30,7 +30,7 @@ def process_video(input_dir, output_dir):
         output_frames = []
         for frame in frames:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            dither = ordered_dither(gray)
+            dither = ordered_dither(gray, frame)
             output_frames.append(dither)
         write_video(output_frames, output_path)
         print(f"Baseline halftone video saved: {output_path}")
@@ -53,7 +53,7 @@ def process_frames(input_dir, output_dir, n=20):
         frames = read_video(input_path, max_frames=n)
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            dither = ordered_dither(gray)
+            dither = ordered_dither(gray, frame)
             output_frame = os.path.join(output_folder, f"frame_{i:04d}.png")
             cv2.imwrite(output_frame, dither)
 
@@ -74,7 +74,7 @@ def process_image(input_dir, output_dir):
 
         img = cv2.imread(input_path)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        dither = ordered_dither(gray)
+        dither = ordered_dither(gray, img)
         cv2.imwrite(output_path, dither)
         print(f"Baseline halftone image saved: {output_path}")
 
@@ -98,9 +98,9 @@ def process_diff():
 
 def main():
     # process_video(INPUT_VIDEO, OUTPUT_VIDEO)
-    process_frames(INPUT_VIDEO, OUTPUT_FRAME)
-    process_diff()
-    # process_image(INPUT_IMAGE, OUTPUT_IMAGE)
+    # process_frames(INPUT_VIDEO, OUTPUT_FRAME)
+    # process_diff()
+    process_image(INPUT_IMAGE, OUTPUT_IMAGE)
 
 if __name__ == "__main__":
     main()
