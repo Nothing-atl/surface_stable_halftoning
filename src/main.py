@@ -1,7 +1,9 @@
 import cv2
 import os
 from video_utils import read_video, write_video
-from halftone import ordered_dither
+from halftone import ordered_dither, create_normal_map
+
+NORMAL_KEYFRAME_INTERVAL = 5
 
 INPUT_VIDEO = "data/videos"
 OUTPUT_VIDEO = "outputs/videos"
@@ -28,9 +30,14 @@ def process_video(input_dir, output_dir):
 
         frames = read_video(input_path)
         output_frames = []
-        for frame in frames:
+        cached_normal = None
+        cached_mask = None
+
+        for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            dither = ordered_dither(gray, frame)
+            if i % NORMAL_KEYFRAME_INTERVAL == 0:
+                cached_normal, cached_mask = create_normal_map(frame)
+            dither = ordered_dither(gray, frame, cached_normal, cached_mask)
             output_frames.append(dither)
         write_video(output_frames, output_path)
         print(f"Baseline halftone video saved: {output_path}")
