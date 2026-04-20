@@ -15,10 +15,12 @@ def read_video(path, max_frames=None):
     return frames
 
 
-def write_video(frames, path, fps=30):
+def write_video(frames, path, fps=30, is_color=False):
     h, w = frames[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(path, fourcc, fps, (w, h), False)
+    out = cv2.VideoWriter(path, fourcc, fps, (w, h), is_color)
+
     for f in frames:
         out.write(f)
+
     out.release()

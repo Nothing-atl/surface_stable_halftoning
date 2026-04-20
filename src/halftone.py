@@ -4,8 +4,8 @@ import torch
 from moge.model.v2 import MoGeModel
 
 # Configuration
-CELL_SIZE = 16 # Expands each pixel by CELL_SIZExCELL_SIZE to fit circle
-DOWNSAMPLE = 16
+CELL_SIZE = 8
+DOWNSAMPLE = 4 
 MOGE_MAX_SIZE = 256 # Max resolution fed to MoGe
 N_BUCKETS = 1024 # Number of discrete ellipse shapes
 MAX_STRETCH = 3.0 # Max stretch ratio of ellipse axes
@@ -18,7 +18,11 @@ BAYER_4 = (1/16.0) * np.array([
 ])
 
 # Load model once at module level
-device = torch.device("cuda")
+device = torch.device(
+    "mps" if torch.backends.mps.is_available()
+    else "cpu"
+)
+print(f"Using halftone torch device: {device}")
 model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
 model.eval()
 
