@@ -34,13 +34,19 @@ def process_video(input_dir, output_dir):
         output_frames = []
         cached_normal = None
         cached_mask = None
+        prev_normal = None
+        prev_gray = None
 
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             if i % NORMAL_KEYFRAME_INTERVAL == 0:
                 cached_normal, cached_mask = create_normal_map(frame)
-            dither = ordered_dither(gray, frame, cached_normal, cached_mask)
+            dither = ordered_dither(gray, frame, cached_normal, cached_mask,
+                                    prev_normal=prev_normal, prev_gray=prev_gray)
             output_frames.append(dither)
+            prev_normal = cached_normal
+            prev_gray = gray
+
         write_video(output_frames, output_path)
         print(f"Baseline halftone video saved: {output_path}")
 
@@ -177,6 +183,8 @@ def process_video_raft_halftone_stabilized(input_dir, output_dir, alpha=0.7, max
         cached_mask = None
         prev_halftone = None
         prev_frame = None
+        prev_normal = None
+        prev_gray = None
 
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -189,7 +197,9 @@ def process_video_raft_halftone_stabilized(input_dir, output_dir, alpha=0.7, max
                 gray=gray,
                 frame=frame,
                 normal_map=cached_normal,
-                valid_mask=cached_mask
+                valid_mask=cached_mask,
+                prev_normal=prev_normal,
+                prev_gray=prev_gray
             )
 
             if prev_halftone is None or prev_frame is None:
@@ -220,8 +230,10 @@ def process_video_raft_halftone_stabilized(input_dir, output_dir, alpha=0.7, max
 
             output_frames.append(stabilized)
 
-            prev_halftone = curr_halftone
+            prev_halftone = stabilized
             prev_frame = frame
+            prev_normal = cached_normal
+            prev_gray = gray
 
         write_video(output_frames, output_path, is_color=False)
         print(f"RAFT halftone stabilized video saved: {output_path}")
@@ -248,9 +260,9 @@ def process_video_raft_gray_stabilized(input_dir, output_dir, alpha=0.8, max_fra
         output_frames = []
         prev_gray = None
         prev_frame = None
-
         cached_normal = None
         cached_mask = None
+        prev_normal = None
 
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -262,33 +274,23 @@ def process_video_raft_gray_stabilized(input_dir, output_dir, alpha=0.8, max_fra
                 stabilized_gray = gray
             else:
                 flow = compute_raft_flow(prev_frame, frame)
-
-                warped_prev_gray = warp_image_with_flow(
-                    prev_gray,
-                    flow,
-                    border_value=255
-                )
-
-                stabilized_gray = cv2.addWeighted(
-                    gray,
-                    alpha,
-                    warped_prev_gray,
-                    1.0 - alpha,
-                    0
-                )
+                warped_prev_gray = warp_image_with_flow(prev_gray, flow, border_value=255)
+                stabilized_gray = cv2.addWeighted(gray, alpha, warped_prev_gray, 1.0 - alpha, 0)
                 stabilized_gray = cv2.GaussianBlur(stabilized_gray, (3, 3), 0)
 
             dither = ordered_dither(
                 gray=stabilized_gray,
                 frame=frame,
                 normal_map=cached_normal,
-                valid_mask=cached_mask
+                valid_mask=cached_mask,
+                prev_normal=prev_normal,
+                prev_gray=prev_gray
             )
 
             output_frames.append(dither)
-
             prev_gray = gray
             prev_frame = frame
+            prev_normal = cached_normal
 
         write_video(output_frames, output_path, is_color=False)
         print(f"RAFT gray stabilized video saved: {output_path}")
@@ -318,6 +320,7 @@ def process_frames_raft_gray_stabilized(input_dir, output_dir, n=5, alpha=0.8):
         prev_frame = None
         cached_normal = None
         cached_mask = None
+        prev_normal = None
 
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -330,28 +333,23 @@ def process_frames_raft_gray_stabilized(input_dir, output_dir, n=5, alpha=0.8):
             else:
                 flow = compute_raft_flow(prev_frame, frame)
                 warped_prev_gray = warp_image_with_flow(prev_gray, flow, border_value=255)
-
-                stabilized_gray = cv2.addWeighted(
-                    gray,
-                    alpha,
-                    warped_prev_gray,
-                    1.0 - alpha,
-                    0
-                )
+                stabilized_gray = cv2.addWeighted(gray, alpha, warped_prev_gray, 1.0 - alpha, 0)
                 stabilized_gray = cv2.GaussianBlur(stabilized_gray, (3, 3), 0)
 
             dither = ordered_dither(
                 gray=stabilized_gray,
                 frame=frame,
                 normal_map=cached_normal,
-                valid_mask=cached_mask
+                valid_mask=cached_mask,
+                prev_normal=prev_normal,
+                prev_gray=prev_gray
             )
 
             output_frame = os.path.join(output_folder, f"frame_{i:04d}.png")
             cv2.imwrite(output_frame, dither)
-
             prev_gray = gray
             prev_frame = frame
+            prev_normal = cached_normal
 
         print(f"Saved {n} RAFT gray stabilized frames to: {output_folder}")
 
@@ -373,6 +371,8 @@ def process_frames(input_dir, output_dir, n=20):
         frames = read_video(input_path, max_frames=n)
         cached_normal = None
         cached_mask = None
+        prev_normal = None
+        prev_gray = None
 
         for i, frame in enumerate(frames):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -384,11 +384,15 @@ def process_frames(input_dir, output_dir, n=20):
                 gray=gray,
                 frame=frame,
                 normal_map=cached_normal,
-                valid_mask=cached_mask
+                valid_mask=cached_mask,
+                prev_normal=prev_normal,
+                prev_gray=prev_gray
             )
 
             output_frame = os.path.join(output_folder, f"frame_{i:04d}.png")
             cv2.imwrite(output_frame, dither)
+            prev_normal = cached_normal
+            prev_gray = gray
 
         print(f"Saved {n} halftone frames to: {output_folder}")
 
@@ -430,8 +434,7 @@ def process_diff():
     cv2.imwrite(r"outputs\frames\clouds\diff.png", instability_amplified)
 
 def main():
-    process_video(INPUT_VIDEO, OUTPUT_VIDEO)
-    process_video_raft_gray_stabilized(INPUT_VIDEO, OUTPUT_VIDEO, alpha=0.6, max_frames=None)
+    process_video_raft_halftone_stabilized(INPUT_VIDEO, OUTPUT_VIDEO, alpha=0.6, max_frames=None)
 
 if __name__ == "__main__":
     main()

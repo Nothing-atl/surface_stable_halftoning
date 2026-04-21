@@ -7,7 +7,7 @@ from torchvision.models.optical_flow import raft_small, Raft_Small_Weights
 RAFT_MAX_SIZE = 384
 
 DEVICE = torch.device(
-    "mps" if torch.backends.mps.is_available()
+    "cuda" if torch.cuda.is_available()
     else "cpu"
 )
 

@@ -10,6 +10,9 @@ MOGE_MAX_SIZE = 256 # Max resolution fed to MoGe
 N_BUCKETS = 1024 # Number of discrete ellipse shapes
 MAX_STRETCH = 3.0 # Max stretch ratio of ellipse axes
 
+NORMAL_BLEND_ALPHA = 0.5 # Blend weight for new normal map vs previous on keyframes
+SCENE_CHANGE_THRESHOLD = 30 # Mean abs diff threshold for scene change detection
+
 BAYER_4 = (1/16.0) * np.array([
     [0,8,2,10],
     [12,4,14,6],
@@ -18,11 +21,7 @@ BAYER_4 = (1/16.0) * np.array([
 ])
 
 # Load model once at module level
-device = torch.device(
-    "mps" if torch.backends.mps.is_available()
-    else "cpu"
-)
-print(f"Using halftone torch device: {device}")
+device = torch.device("cuda")
 model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
 model.eval()
 
@@ -46,6 +45,11 @@ def create_normal_map(frame): # Run MoGe-2 on frame, return (Height, Width, 3) n
     normal_map = output["normal"].squeeze(0).cpu().numpy() # (H, W, 3), in camera space
     mask = output["mask"].squeeze(0).cpu().numpy()
     return normal_map, mask
+
+
+def is_scene_change(prev_gray, curr_gray, threshold=SCENE_CHANGE_THRESHOLD): # Detect abrupt scene changes by mean absolute difference
+    diff = cv2.absdiff(curr_gray, prev_gray)
+    return diff.mean() > threshold
 
 
 def build_kernel_for_normal(nx, ny, nz): # Build a circle stamp of size CELL_SIZE * CELL_SIZE
@@ -105,25 +109,47 @@ def compute_all_kernels(normal_small, mask_small): # Compute one ellipse kernel 
     return kernel_table[bid_to_idx[bucket_ids.ravel()]].reshape(sh, sw, CELL_SIZE, CELL_SIZE)
 
 
-def ordered_dither(gray, frame, normal_map=None, valid_mask=None):
+def ordered_dither(gray, frame, normal_map=None, valid_mask=None, prev_normal=None, prev_gray=None, color=False):
     if normal_map is None:
         normal_map, valid_mask = create_normal_map(frame)
 
-    h, w = gray.shape
-    small = cv2.resize(gray, (w // DOWNSAMPLE, h // DOWNSAMPLE), interpolation=cv2.INTER_AREA) # Downsample the image
-    sh, sw = small.shape
+    # Blend normal map with previous keyframe normal to avoid abrupt kernel changes
+    if prev_normal is not None:
+        normal_map = cv2.addWeighted(normal_map, NORMAL_BLEND_ALPHA, prev_normal, 1.0 - NORMAL_BLEND_ALPHA, 0)
 
-    img = small.astype(np.float32) / 255.0
-    tiled = np.tile(BAYER_4, (sh // 4 + 1, sw // 4 + 1)) # Repeat the Bayer matrix so it covers the whole image. The matrix repeats every 4x4 pixels
-    tiled = tiled[:sh, :sw] # Crop the tiled matrix so it matches the exact image size
-    on_mask = img < tiled # Compare each pixel intensity with the threshold matrix
+    h, w = gray.shape
+    small_gray = cv2.resize(gray, (w // DOWNSAMPLE, h // DOWNSAMPLE), interpolation=cv2.INTER_AREA) # Downsample the image
+    sh, sw = small_gray.shape
+
+    # Blend grayscale with previous frame to reduce dot flickering, skip on scene changes
+    if prev_gray is not None and not is_scene_change(prev_gray, gray):
+        prev_small = cv2.resize(prev_gray, (w // DOWNSAMPLE, h // DOWNSAMPLE), interpolation=cv2.INTER_AREA)
+        small_gray = cv2.addWeighted(small_gray, 0.8, prev_small, 0.2, 0)
+
+    tiled = np.tile(BAYER_4, (sh // 4 + 1, sw // 4 + 1))[:sh, :sw] # Repeat the Bayer matrix so it covers the whole image. The matrix repeats every 4x4 pixels
 
     # Get normal map and downsample to match small
     normal_small = cv2.resize(normal_map, (sw, sh), interpolation=cv2.INTER_NEAREST)
     mask_small = cv2.resize(valid_mask.astype(np.uint8), (sw, sh), interpolation=cv2.INTER_NEAREST).astype(bool)
-
     kernels = compute_all_kernels(normal_small, mask_small)
 
-    out = np.full((sh, sw, CELL_SIZE, CELL_SIZE), 255, dtype=np.uint8)
-    out = np.where(on_mask[:, :, None, None] & kernels, 0, out)
-    return out.transpose(0, 2, 1, 3).reshape(sh * CELL_SIZE, sw * CELL_SIZE)
+    if color:
+        # Dither each RGB channel independently with the same ellipse kernels
+        rgb_small = cv2.resize(
+            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+            (sw, sh), interpolation=cv2.INTER_AREA
+        ).astype(np.float32) / 255.0
+
+        out = np.full((sh, sw, CELL_SIZE, CELL_SIZE, 3), 255, dtype=np.uint8)
+        for c in range(3):
+            on_mask = rgb_small[..., c] < tiled # Compare each pixel intensity with the threshold matrix
+            out[..., c] = np.where(on_mask[:, :, None, None] & kernels, 0, 255)
+
+        # Transpose to (sh, CELL_SIZE, sw, CELL_SIZE, 3) then reshape to final image
+        return out.transpose(0, 2, 1, 3, 4).reshape(sh * CELL_SIZE, sw * CELL_SIZE, 3)
+    else:
+        img = small_gray.astype(np.float32) / 255.0
+        on_mask = img < tiled
+        out = np.full((sh, sw, CELL_SIZE, CELL_SIZE), 255, dtype=np.uint8)
+        out = np.where(on_mask[:, :, None, None] & kernels, 0, out)
+        return out.transpose(0, 2, 1, 3).reshape(sh * CELL_SIZE, sw * CELL_SIZE)
