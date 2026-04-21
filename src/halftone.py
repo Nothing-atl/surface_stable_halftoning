@@ -21,7 +21,10 @@ BAYER_4 = (1/16.0) * np.array([
 ])
 
 # Load model once at module level
-device = torch.device("cuda")
+device = torch.device(
+    "cuda" if torch.backends.mps.is_available()
+    else "cpu"
+)
 model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
 model.eval()
 
