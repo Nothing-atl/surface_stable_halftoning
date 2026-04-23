@@ -95,8 +95,8 @@ Typical runtime:
 
 ```bash
 src/
-├── main.py # Main pipeline (batch processing)
-├── gui.py # GUI application
+├── gui.py # Main application (GUI + pipeline orchestration)
+├── main.py # Batch processing / testing script
 ├── halftone.py # Halftone + MoGe logic
 ├── raft_flow.py # Optical flow + warping
 ├── video_utils.py # Video I/O utilities
@@ -148,6 +148,7 @@ Compared to standard halftoning:
 
 ##  Acknowledgements
 
-- MoGe-2 (surface estimation)  
-- RAFT (optical flow)  
+- [Surface-Stable Halftoning](https://www.youtube.com/watch?v=EzjWBmhO_1E) — original project inspiration
+- [MoGe-2](https://github.com/microsoft/moge) — surface normal estimation
+- [RAFT](https://github.com/princeton-vl/raft) — optical flow
 - Classic ordered dithering techniques  
