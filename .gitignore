@@ -1,0 +1,7 @@
+__pycache__/
+outputs/frames/*
+outputs/images/*
+outputs/videos/*
+!outputs/frames/.gitkeep
+!outputs/images/.gitkeep
+!outputs/videos/.gitkeep
