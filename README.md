@@ -103,6 +103,7 @@ Typical runtime:
 
 ##  Project Structure
 
+```bash
 src/
 ├── main.py # Main pipeline (batch processing)
 ├── gui.py # GUI application
@@ -110,6 +111,7 @@ src/
 ├── raft_flow.py # Optical flow + warping
 ├── video_utils.py # Video I/O utilities
 
+```
 
 ---
 
