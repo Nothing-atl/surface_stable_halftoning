@@ -133,7 +133,8 @@ def dots_from_tone_and_threshold(gray, threshold_map, cell_size=8):
 
 # Load model once at module level
 device = torch.device(
-    "cuda" if torch.backends.mps.is_available()
+    "mps" if torch.backends.mps.is_available()
+    # "cuda" if torch.backends.mps.is_available()
     else "cpu"
 )
 model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
