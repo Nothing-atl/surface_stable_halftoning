@@ -1,5 +1,7 @@
 # 🎥 Surface-Stable Halftoning
 
+[![Surface-Stable Halftoning](https://img.youtube.com/vi/VLo3zQo3Sac/0.jpg)](https://www.youtube.com/watch?v=VLo3zQo3Sac)
+
 This project focuses on generating **temporally stable halftone videos**.  
 Instead of applying halftoning independently to each frame (which causes flickering), we combine **geometry awareness** and **motion-based stabilization** to produce visually coherent stylized videos.
 
