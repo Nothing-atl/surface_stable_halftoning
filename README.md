@@ -50,31 +50,21 @@ This project improves stability by combining:
 
 ---
 
-## 🖥️ GUI (Interactive App)
+## Running the Project
 
-Run the GUI to:
-
-- Load videos  
-- Adjust parameters  
-- Preview results (2×2 grid)  
-- Monitor processing in real-time  
-
+### GUI (Recommended)
 ```bash
 python src/gui.py
 ```
-
-##  Running the Project
-
-###  Local (Mac/Linux)
-
+If you are on Mac (MPS issue with MoGe):
 ```bash
-python src/main.py
+PYTORCH_ENABLE_MPS_FALLBACK=1 python src/gui.py
 ```
 
-If you are on Mac (MPS issue with MoGe):
-
+### Testing / Batch Mode
+For development or batch processing without the GUI:
 ```bash
-PYTORCH_ENABLE_MPS_FALLBACK=1 python src/main.py
+python src/main.py
 ```
 
 ##  Performance
@@ -143,8 +133,8 @@ Compared to standard halftoning:
 ---
 
 ##  Authors
-- Brendon kim
-- Aleena Treesa Leejoy  
+- Aleena Treesa Leejoy
+- Brendon Kim 
 - Prateek S. Arora
 
 ---
@@ -152,7 +142,7 @@ Compared to standard halftoning:
 ##  Notes
 
 - MoGe may require CPU fallback on Mac due to MPS limitations  
-- Best performance achieved using GPU (H100/A100 recommended)  
+- Best performance achieved using any CUDA-capable GPU
 
 ---
 
